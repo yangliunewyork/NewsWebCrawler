@@ -4,38 +4,15 @@ import errno
 import newspaper
 import logging
 import logging.config
+import structlog
+
+from tqdm import tqdm
 
 from Article import Article
+import LoggerConfiguration
 
 
-logger = logging.getLogger(__name__)
-
-# load config from file
-# logging.config.fileConfig('logging.ini', disable_existing_loggers=False)
-# or, for dictConfig
-logging.config.dictConfig({
-    'version': 1,
-    'disable_existing_loggers': False,  # this fixes the problem
-    'formatters': {
-        'standard': {
-            'format': '%(asctime)s [%(levelname)s] %(name)s: %(message)s'
-                    },
-            },
-    'handlers': {
-        'default': {
-            'level':'INFO',
-            'class':'logging.StreamHandler',
-                    },
-            },
-    'loggers': {
-        '': {
-            'handlers': ['default'],
-            'level': 'INFO',
-            'propagate': True
-                    }
-            }
-})
-
+logger = structlog.getLogger(__name__)
 
 def download_articles_from_website(website_url):
     """
@@ -44,10 +21,10 @@ def download_articles_from_website(website_url):
     """
     website_source = newspaper.build(website_url, memoize_articles=False)
     logging.info("There are %s articles at %s.",
-                website_source.size(),
-                website_url)
+                 website_source.size(),
+                 website_url)
     article_list = []
-    for article in website_source.articles:
+    for article in tqdm(website_source.articles[0:20]):
         article.download()
         article.parse()
         articleObject = Article()
@@ -57,8 +34,7 @@ def download_articles_from_website(website_url):
         articleObject.m_publish_date = "null" if article.publish_date is None else article.publish_date.strftime('%Y-%m-%d')
         articleObject.m_url = article.url
         article_list.append(articleObject)
-        if len(article_list) > 10 :
-            break
+        
     return article_list
 
 def create_required_directory_if_not_exists(source, date):
@@ -76,16 +52,16 @@ def create_required_directory_if_not_exists(source, date):
             logging.error(error);
             if error.errno != errno.EEXIST:
                 raise
-    logging.info('The required directory %s is ready.', required_dir)
     return required_dir
         
 def save_articles_to_file(source, article_list):
     """
     Save the download articles to a file as JSON format.
     """
-    for article in article_list:
+    logging.info("Begin to save %s articles to directory %s.", len(article_list), source)
+    for article in tqdm(article_list):
         required_dir = create_required_directory_if_not_exists(source, article.m_publish_date)
-        filename =  required_dir + "/" + article.m_title +".txt"
+        filename =  required_dir + "/" + article.m_title +".json"
         
         if os.path.exists(filename):
             append_write = 'a' # append if already exists
@@ -95,7 +71,7 @@ def save_articles_to_file(source, article_list):
         file_writer = open(filename, append_write)
         file_writer.write(article.to_json())
         file_writer.close()
-    logging.info('%s articles has been written to %s.', len(article_list), filename) 
+    logging.info('%s articles has been written to %s.', len(article_list), source) 
 
 if __name__ == "__main__":
     article_list = download_articles_from_website("http://cnn.com")
